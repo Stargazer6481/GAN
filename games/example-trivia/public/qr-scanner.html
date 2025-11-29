@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scan QR Code - Trivia</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <style>
+    .scanner-container {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: white;
+    }
+
+    .scanner-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .scanner-header h1 {
+      font-size: 2.5em;
+      margin: 0;
+      background: linear-gradient(135deg, #a78bfa, #f472b6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .scanner-header p {
+      font-size: 1.1em;
+      opacity: 0.8;
+      margin-top: 10px;
+    }
+
+    .video-container {
+      position: relative;
+      width: 100%;
+      max-width: 500px;
+      aspect-ratio: 1;
+      border: 3px solid #a78bfa;
+      border-radius: 15px;
+      overflow: hidden;
+      margin-bottom: 20px;
+      box-shadow: 0 0 30px rgba(168, 139, 250, 0.3);
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .scanner-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: 3px dashed #a78bfa;
+      box-sizing: border-box;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle, rgba(167, 139, 250, 0.1) 0%, transparent 70%);
+    }
+
+    .scanner-overlay.active {
+      display: flex;
+    }
+
+    .scanner-dot {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #a78bfa;
+      border-radius: 50%;
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(167, 139, 250, 0.7);
+      }
+      50% {
+        transform: scale(1.1);
+        box-shadow: 0 0 0 10px rgba(167, 139, 250, 0);
+      }
+    }
+
+    .status-message {
+      text-align: center;
+      margin: 20px 0;
+      font-size: 1.1em;
+    }
+
+    .status-message.success {
+      color: #34d399;
+    }
+
+    .status-message.error {
+      color: #f87171;
+    }
+
+    .status-message.info {
+      opacity: 0.8;
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn {
+      padding: 12px 30px;
+      font-size: 1em;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #a78bfa, #c084fc);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(168, 139, 250, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(168, 139, 250, 0.2);
+      color: #a78bfa;
+      border: 2px solid #a78bfa;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(168, 139, 250, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .manual-entry {
+      margin-top: 30px;
+      padding: 20px;
+      background: rgba(168, 139, 250, 0.1);
+      border: 2px solid rgba(168, 139, 250, 0.3);
+      border-radius: 10px;
+      text-align: center;
+      display: none;
+    }
+
+    .manual-entry.show {
+      display: block;
+    }
+
+    .manual-entry label {
+      display: block;
+      margin-bottom: 10px;
+      opacity: 0.8;
+    }
+
+    .manual-entry input {
+      padding: 10px;
+      border: 2px solid #a78bfa;
+      border-radius: 6px;
+      background: rgba(168, 139, 250, 0.05);
+      color: white;
+      font-size: 1em;
+      width: 100%;
+      max-width: 300px;
+      box-sizing: border-box;
+      margin-bottom: 15px;
+    }
+
+    .manual-entry input::placeholder {
+      opacity: 0.5;
+    }
+
+    @media (max-width: 768px) {
+      .scanner-header h1 {
+        font-size: 1.8em;
+      }
+
+      .video-container {
+        max-width: 100%;
+        aspect-ratio: 1;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        font-size: 0.95em;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .scanner-header h1 {
+        font-size: 1.5em;
+      }
+
+      .scanner-container {
+        padding: 15px;
+      }
+
+      .video-container {
+        margin-bottom: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="scanner-container">
+    <div class="scanner-header">
+      <h1>📱 Scan QR Code</h1>
+      <p>Point your camera at the QR code to join the game</p>
+    </div>
+
+    <div class="video-container">
+      <video id="video" autoplay></video>
+      <div class="scanner-overlay" id="scannerOverlay">
+        <div class="scanner-dot"></div>
+      </div>
+    </div>
+
+    <div class="status-message info" id="statusMessage">
+      Looking for QR code...
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-secondary" id="toggleCameraBtn">Switch Camera</button>
+      <button class="btn btn-secondary" id="toggleManualBtn">Manual Entry</button>
+    </div>
+
+    <div class="manual-entry" id="manualEntry">
+      <label>Enter Room Code:</label>
+      <input type="text" id="roomCodeInput" placeholder="e.g., abc123def456" />
+      <button class="btn btn-primary" id="manualSubmitBtn">Join Room</button>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const statusMsg = document.getElementById('statusMessage');
+    const scannerOverlay = document.getElementById('scannerOverlay');
+    const toggleCameraBtn = document.getElementById('toggleCameraBtn');
+    const toggleManualBtn = document.getElementById('toggleManualBtn');
+    const manualEntry = document.getElementById('manualEntry');
+    const roomCodeInput = document.getElementById('roomCodeInput');
+    const manualSubmitBtn = document.getElementById('manualSubmitBtn');
+
+    let stream = null;
+    let scanning = true;
+    let currentDeviceIndex = 0;
+    let videoDevices = [];
+    let canvas = null;
+    let canvasContext = null;
+
+    async function initCamera() {
+      try {
+        statusMsg.textContent = 'Requesting camera access...';
+        statusMsg.className = 'status-message info';
+
+        // Get all available video devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+        if (videoDevices.length === 0) {
+          throw new Error('No camera found on this device');
+        }
+
+        const constraints = {
+          video: {
+            deviceId: videoDevices[currentDeviceIndex].deviceId,
+            facingMode: 'environment'
+          },
+          audio: false
+        };
+
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+
+        // Setup canvas for QR code detection
+        canvas = document.createElement('canvas');
+        canvasContext = canvas.getContext('2d');
+
+        video.onloadedmetadata = () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          scanQRCode();
+        };
+
+        statusMsg.textContent = 'Camera ready - scanning for QR codes...';
+      } catch (err) {
+        statusMsg.textContent = '❌ Camera access denied. Use manual entry.';
+        statusMsg.className = 'status-message error';
+        toggleManualBtn.textContent = 'Use Manual Entry';
+      }
+    }
+
+    function scanQRCode() {
+      if (!scanning || !stream) return;
+
+      canvasContext.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+      if (code) {
+        // QR code found
+        const url = new URL(code.data);
+        const roomId = url.searchParams.get('room');
+
+        if (roomId) {
+          scanning = false;
+          scannerOverlay.classList.add('active');
+          statusMsg.textContent = '✓ QR Code scanned! Joining room...';
+          statusMsg.className = 'status-message success';
+          
+          // Redirect to player page
+          setTimeout(() => {
+            window.location.href = `/games/example-trivia/public/player.html?room=${roomId}`;
+          }, 500);
+          return;
+        }
+      }
+
+      requestAnimationFrame(scanQRCode);
+    }
+
+    toggleCameraBtn.onclick = async () => {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+
+      currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
+      statusMsg.textContent = 'Switching camera...';
+      statusMsg.className = 'status-message info';
+      
+      await initCamera();
+    };
+
+    toggleManualBtn.onclick = () => {
+      manualEntry.classList.toggle('show');
+      toggleManualBtn.textContent = manualEntry.classList.contains('show') 
+        ? 'Back to Scanner' 
+        : 'Manual Entry';
+    };
+
+    manualSubmitBtn.onclick = () => {
+      const roomId = roomCodeInput.value.trim();
+      if (!roomId) {
+        statusMsg.textContent = '❌ Please enter a room code';
+        statusMsg.className = 'status-message error';
+        return;
+      }
+
+      scanning = false;
+      statusMsg.textContent = '✓ Room code entered! Joining...';
+      statusMsg.className = 'status-message success';
+
+      setTimeout(() => {
+        window.location.href = `/games/example-trivia/public/player.html?room=${roomId}`;
+      }, 500);
+    };
+
+    roomCodeInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        manualSubmitBtn.click();
+      }
+    });
+
+    // Start scanning on load
+    initCamera();
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  gan:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./games:/app/games
+      - ./public:/app/public
+    restart: unless-stopped

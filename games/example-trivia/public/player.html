@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAN Trivia Player</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="container">
+  <div class="header-row">
+    <a href="/" style="display: flex; align-items: center; text-decoration: none; cursor: pointer;">
+      <img src="/assets/GAN_Logo.png" alt="GAN" style="height: 50px; width: 50px;">
+    </a>
+  </div>
+
+  <div id="joinCard" class="card">
+    <label>Name</label>
+    <input id="playerName" placeholder="Your name" />
+    <button id="joinBtn">Join Game</button>
+  </div>
+
+  <div id="gameCard" class="card" style="display:none;">
+    <div id="timer"></div>
+    <div id="question"></div>
+    <div id="options"></div>
+    <div id="status"></div>
+    <h3>Leaderboard</h3>
+    <div id="scores" class="leaderboard"></div>
+  </div>
+
+  <div id="gameEndCard" class="card" style="display:none; text-align: center;">
+    <h2 style="background: linear-gradient(135deg, #a78bfa, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 30px 0;">🎉 Game Complete! 🎉</h2>
+    <div id="endRankings" style="margin: 20px 0;"></div>
+    <div style="margin-top: 30px; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+      <button id="homeBtn" onclick="window.location.href='/';" style="padding: 10px 20px; background: rgba(168, 139, 250, 0.2); color: #a78bfa; border: 2px solid #a78bfa; border-radius: 8px; cursor: pointer;">Go Home</button>
+      <button id="playAgainBtn" style="padding: 10px 20px; background: linear-gradient(135deg, #a78bfa, #c084fc); color: white; border: none; border-radius: 8px; cursor: pointer;">Play Again</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const params = new URLSearchParams(location.search);
+const roomId = params.get("room");
+
+const joinCard = document.getElementById("joinCard");
+const gameCard = document.getElementById("gameCard");
+const gameEndCard = document.getElementById("gameEndCard");
+const joinBtn = document.getElementById("joinBtn");
+const playerNameInput = document.getElementById("playerName");
+
+const timerEl = document.getElementById("timer");
+const questionEl = document.getElementById("question");
+const optionsEl = document.getElementById("options");
+const statusEl = document.getElementById("status");
+const scoresEl = document.getElementById("scores");
+
+let playerId = null;
+let questionStartTs = 0;
+let curMaxTimeMs = 15000;
+let answered = false;
+
+joinBtn.onclick = () => {
+  const name = playerNameInput.value.trim();
+  if(!name) return alert("Enter a name");
+  socket.emit("joinRoom", { roomId, playerName: name }, res=>{
+    if(res && res.error) return alert(res.error);
+    playerId = socket.id;
+    joinCard.style.display = "none";
+    gameCard.style.display = "block";
+  });
+};
+
+// handle new question
+socket.on("newQuestion", q => {
+  answered = false;
+  statusEl.textContent = "Answer quickly!";
+  questionEl.textContent = q.question;
+  optionsEl.innerHTML = "";
+  curMaxTimeMs = q.maxTimeMs || 15000;
+  questionStartTs = Date.now();
+
+  q.options.forEach((opt, i) => {
+    const btn = document.createElement("button");
+    btn.textContent = opt;
+    btn.className = "option";
+    btn.onclick = () => {
+      if (answered) return;
+      answered = true;
+      const now = Date.now();
+      const timeTakenMs = Math.max(0, now - questionStartTs);
+      // lock UI
+      Array.from(optionsEl.children).forEach(b => b.disabled = true);
+      statusEl.textContent = "Answer locked. Waiting for others...";
+      socket.emit("playerAnswer", { roomId, playerId, answerIndex: i });
+    };
+    optionsEl.appendChild(btn);
+  });
+
+  startTimerDisplay(curMaxTimeMs);
+});
+
+// reveal event: show correct and selections
+socket.on("reveal", data => {
+  // color options
+  const correctIndex = data.correctIndex;
+  Array.from(optionsEl.children).forEach((b,i) => {
+    if (i === correctIndex) b.classList.add("option", "correct");
+    else b.classList.add("option", "wrong");
+    b.disabled = true;
+  });
+
+  // show per-player info with names and points
+  let info = "<div><strong>Who got it right:</strong></div>";
+  let hasCorrect = false;
+  for (const [pid, sel] of Object.entries(data.selections || {})) {
+    if (sel.correct) {
+      hasCorrect = true;
+      const name = sel.name || "Unknown";
+      const points = sel.provisionalPoints || 0;
+      const timeSeconds = sel.timeSeconds || "0.0";
+      info += `<div>✅ ${name}: ${sel.answerIndex} (+${points} pts, ${timeSeconds}s)</div>`;
+    }
+  }
+  if (!hasCorrect) {
+    info += `<div style="color: #999;">No one got it right</div>`;
+  }
+  statusEl.innerHTML = info;
+
+  // update scoreboard (server also emits playerList — we listen to that)
+});
+
+// update leaderboard
+socket.on("playerList", list => {
+  scoresEl.innerHTML = "";
+  const sorted = [...list].sort((a,b) => (b.score||0) - (a.score||0));
+  sorted.forEach((p,i) => {
+    const d = document.createElement("div");
+    d.className = "leaderboard-entry";
+    if (i === 0) d.classList.add("top");
+    else if (i === 1) d.classList.add("second");
+    else if (i === 2) d.classList.add("third");
+    else d.classList.add("other");
+    d.innerHTML = `<span>${p.name}</span><span>${p.score || 0} pts</span>`;
+    scoresEl.appendChild(d);
+  });
+});
+
+// game over - now gameEnd with traits
+socket.on("gameEnd", endStats => {
+  gameCard.style.display = "none";
+  gameEndCard.style.display = "block";
+  
+  // Find this player in rankings
+  const thisPlayer = endStats.rankings.find(p => p.id === playerId);
+  
+  const rankingsHTML = endStats.rankings.map((player, idx) => {
+    const isThisPlayer = player.id === playerId;
+    const isWinner = idx === endStats.rankings.length - 1;
+    const rank = endStats.rankings.length - idx;
+    
+    return `
+      <div style="background: ${isThisPlayer ? 'rgba(168, 139, 250, 0.2)' : 'rgba(168, 139, 250, 0.1)'}; border: 2px solid ${isThisPlayer ? 'rgba(168, 139, 250, 0.6)' : 'rgba(168, 139, 250, 0.3)'}; border-radius: 10px; padding: 15px; margin: 10px 0; ${isThisPlayer ? 'box-shadow: 0 0 20px rgba(168, 139, 250, 0.4);' : ''}">
+        <div style="font-size: 1.3em; font-weight: bold; margin-bottom: 8px;">
+          ${isWinner ? '🏆 ' : '#' + rank + ' '}${player.name}${isThisPlayer ? ' (You)' : ''}
+        </div>
+        <div style="font-size: 2em; margin: 8px 0;">${player.trait}</div>
+        <div style="opacity: 0.8; margin: 8px 0;">${player.description}</div>
+        <div style="font-size: 0.9em; opacity: 0.7; margin-top: 10px;">
+          ✓ ${player.stats.correct}/${player.stats.total} • 🎯 ${player.stats.accuracy}% • ⚡ ${player.stats.avgResponseTime}ms • 🔥 ${player.stats.maxStreak}
+        </div>
+        <div style="font-size: 1.5em; color: #fb923c; font-weight: bold; margin-top: 10px;">${player.score} pts</div>
+      </div>
+    `;
+  }).join('');
+  
+  document.getElementById('endRankings').innerHTML = rankingsHTML;
+  
+  document.getElementById('playAgainBtn').onclick = () => {
+    window.location.href = `/games/example-trivia/public/qr-scanner.html`;
+  };
+});
+
+// timer display
+let timerInterval = null;
+function startTimerDisplay(maxTimeMs) {
+  clearInterval(timerInterval);
+  let remain = Math.ceil(maxTimeMs / 1000);
+  timerEl.textContent = `Time left: ${remain}s`;
+  timerInterval = setInterval(() => {
+    remain--;
+    timerEl.textContent = `Time left: ${remain}s`;
+    if (remain <= 0) clearInterval(timerInterval);
+  }, 1000);
+}
+</script>
+</body>
+</html>

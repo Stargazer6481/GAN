@@ -1,0 +1,13 @@
+{
+  "name": "Pictionary",
+  "id": "pictionary",
+  "minPlayers": 2,
+  "maxPlayers": 10,
+  "categories": [
+    { "id": "animals", "name": "Animals" },
+    { "id": "objects", "name": "Objects" },
+    { "id": "actions", "name": "Actions" },
+    { "id": "movies", "name": "Movies & TV" },
+    { "id": "random", "name": "Random" }
+  ]
+}

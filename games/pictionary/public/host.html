@@ -1,0 +1,297 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pictionary Host</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="header-row">
+    <a href="/" style="display: flex; align-items: center; text-decoration: none; cursor: pointer;">
+      <img src="/assets/GAN_Logo.png" alt="GAN" style="height: 50px; width: 50px; margin-right: 15px;">
+    </a>
+    <h1 style="margin: 0; flex: 1;">Pictionary</h1>
+    <div class="room-tag" id="roomInfo" style="display: none;">Room: <span id="roomCode"></span></div>
+  </div>
+
+  <div id="gameSelection" class="card">
+    <h2>Select a Game</h2>
+    <p style="color: #9ca3af; margin-bottom: 20px;">Choose a game to create a room</p>
+    <div id="games" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;"></div>
+  </div>
+
+  <div id="room" class="card" style="display:none;">
+    <h2>Room Setup - <span id="gameName"></span></h2>
+    
+    <div style="background: rgba(99, 102, 241, 0.1); padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(99, 102, 241, 0.2);">
+      <div style="font-weight: 600; color: #e0e0e0; margin-bottom: 8px;">Room Code</div>
+      <div style="font-size: 1.5em; font-weight: 700; color: #a5b4fc; font-family: monospace;" id="roomCodeDisplay"></div>
+      <div style="color: #9ca3af; font-size: 14px; margin-top: 8px;">Share this code with players</div>
+    </div>
+
+    <div style="background: rgba(99, 102, 241, 0.1); padding: 16px; border-radius: 8px; margin-bottom: 20px; text-align: center; border: 1px solid rgba(99, 102, 241, 0.2);">
+      <div style="font-weight: 600; color: #e0e0e0; margin-bottom: 12px;">Scan QR Code</div>
+      <div id="qrCode"></div>
+    </div>
+
+    <h3>Players</h3>
+    <div id="players" style="display: grid; gap: 10px; margin-bottom: 20px; min-height: 60px;">
+      <div style="color: #999; font-style: italic;">Waiting for players…</div>
+    </div>
+
+    <div style="background: rgba(99, 102, 241, 0.1); padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(99, 102, 241, 0.2);">
+      <label style="margin-bottom: 12px; color: #e0e0e0;">Choose Categories (hold ctrl/cmd to multi-select):</label>
+      <select id="category" multiple style="min-height: 100px;"></select>
+
+      <label style="margin-top: 16px; color: #e0e0e0;">Time per round (seconds):</label>
+      <input id="timePerRound" type="number" min="30" max="180" value="60" />
+
+      <label style="color: #e0e0e0;">Number of rounds:</label>
+      <input id="roundCount" type="number" min="1" max="10" value="3" />
+    </div>
+
+    <div style="margin-top: 20px;">
+      <button id="startGame" style="width: 100%;">Start Game</button>
+    </div>
+  </div>
+
+  <div id="gameScreen" class="card" style="display:none;">
+    <div id="timer" style="text-align: center; font-size: 2em; font-weight: bold; color: #ff6b6b; margin-bottom: 20px;"></div>
+    
+    <div style="background: rgba(99, 102, 241, 0.1); padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(99, 102, 241, 0.2);">
+      <div style="color: #9ca3af; font-size: 14px; margin-bottom: 8px;">Current Drawer:</div>
+      <div id="currentDrawer" style="font-size: 1.3em; color: #a5b4fc; font-weight: 600;"></div>
+    </div>
+
+    <div id="drawingContainer" style="background: rgba(40, 40, 70, 0.8); border-radius: 8px; margin-bottom: 20px; border: 2px solid rgba(99, 102, 241, 0.3); overflow: hidden;">
+      <canvas id="drawingCanvas" style="display: block; width: 100%; max-width: 100%; background: #000;"></canvas>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div>
+        <h3>Guesses</h3>
+        <div id="guesses" style="display: grid; gap: 8px; max-height: 300px; overflow-y: auto;"></div>
+      </div>
+      <div>
+        <h3>Leaderboard</h3>
+        <div id="scores" class="leaderboard" style="max-height: 300px; overflow-y: auto;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameOverScreen" class="card" style="display:none; text-align: center;">
+    <h2>Game Over!</h2>
+    <div class="winner-name" id="winnerName" style="font-size: 1.5em; margin: 20px 0; color: #fbbf24;"></div>
+    
+    <h3>Final Scores</h3>
+    <div id="finalScores" class="leaderboard"></div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+let selectedGame = null;
+let roomId = null;
+let timerInterval = null;
+
+// Load games
+fetch("/api/games")
+  .then(r => r.json())
+  .then(list => {
+    const container = document.getElementById("games");
+    container.innerHTML = "";
+    list.forEach(g => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.style.cursor = "pointer";
+      div.style.transition = "transform 0.2s, box-shadow 0.2s";
+      div.onmouseover = () => { div.style.transform = "translateY(-4px)"; div.style.boxShadow = "0 12px 24px rgba(0,0,0,0.15)"; };
+      div.onmouseout = () => { div.style.transform = "translateY(0)"; div.style.boxShadow = "0 8px 32px rgba(0,0,0,0.1)"; };
+      
+      div.innerHTML = `<h3>${g.name}</h3><p style="color: #9ca3af; font-size: 14px;">${g.minPlayers}-${g.maxPlayers} players</p>`;
+      div.onclick = () => createRoom(g);
+      container.appendChild(div);
+    });
+  });
+
+function createRoom(game) {
+  selectedGame = game.id;
+  document.getElementById("gameSelection").style.display = "none";
+  document.getElementById("room").style.display = "block";
+  document.getElementById("roomInfo").style.display = "block";
+  document.getElementById("gameName").textContent = game.name;
+
+  fetch(`/api/games`).then(r => r.json()).then(list => {
+    const gameObj = list.find(g => g.id === game.id);
+    const catSelect = document.getElementById("category");
+    catSelect.innerHTML = "";
+    if(gameObj.categories) {
+      gameObj.categories.forEach(cat => {
+        const opt = document.createElement("option");
+        opt.value = cat.id;
+        opt.textContent = cat.name;
+        catSelect.appendChild(opt);
+      });
+      if(catSelect.options.length > 0) catSelect.options[0].selected = true;
+    }
+  });
+
+  socket.emit("createRoom", { gameId: game.id, hostName: "Host" }, (res) => {
+    if (res.error) return alert(res.error);
+    roomId = res.roomId;
+    document.getElementById("roomCode").textContent = roomId;
+    document.getElementById("roomCodeDisplay").textContent = roomId;
+
+    const joinUrl = `${location.origin}/games/${game.id}/public/player.html?room=${roomId}`;
+    const qrCodeEl = document.getElementById("qrCode");
+    qrCodeEl.innerHTML = "";
+    QRCode.toCanvas(joinUrl, { width: 150 }, (err, canvas) => {
+      if(err) console.error(err);
+      else qrCodeEl.appendChild(canvas);
+    });
+  });
+}
+
+socket.on("playerList", list => {
+  const el = document.getElementById("players");
+  el.innerHTML = "";
+  if (list.length === 0) {
+    el.innerHTML = "<div style=\"color: #999; font-style: italic;\">Waiting for players…</div>";
+    return;
+  }
+  list.forEach(p => {
+    const d = document.createElement("div");
+    d.style.padding = "12px";
+    d.style.background = "rgba(99, 102, 241, 0.2)";
+    d.style.borderRadius = "8px";
+    d.style.fontWeight = "600";
+    d.style.color = "#a5b4fc";
+    d.style.border = "1px solid rgba(99, 102, 241, 0.3)";
+    d.innerHTML = `<span>✅</span> ${p.name}`;
+    el.appendChild(d);
+  });
+});
+
+document.getElementById("startGame").onclick = () => {
+  if (!selectedGame || !roomId) return;
+  const selectedOptions = Array.from(document.getElementById("category").selectedOptions);
+  if (selectedOptions.length === 0) {
+    alert("Please select at least one category");
+    return;
+  }
+  
+  const catIds = selectedOptions.map(o => o.value);
+  const maxTime = parseInt(document.getElementById("timePerRound").value, 10) || 60;
+  const roundCount = parseInt(document.getElementById("roundCount").value, 10) || 3;
+
+  socket.emit("startGame", { roomId, categories: catIds, maxTime, questionCount: roundCount });
+  document.getElementById("room").style.display = "none";
+  document.getElementById("gameScreen").style.display = "block";
+};
+
+// Game events
+socket.on("roundStart", data => {
+  document.getElementById("currentDrawer").textContent = data.drawerName;
+  startTimer(data.maxTimeMs);
+  document.getElementById("guesses").innerHTML = "";
+  
+  const canvas = document.getElementById("drawingCanvas");
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 400;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+});
+
+socket.on("drawingUpdate", data => {
+  const canvas = document.getElementById("drawingCanvas");
+  const ctx = canvas.getContext("2d");
+  
+  ctx.strokeStyle = data.color || "#fff";
+  ctx.lineWidth = data.width || 3;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  
+  ctx.beginPath();
+  ctx.moveTo(data.fromX, data.fromY);
+  ctx.lineTo(data.toX, data.toY);
+  ctx.stroke();
+});
+
+socket.on("guessSubmitted", guesses => {
+  const guessesEl = document.getElementById("guesses");
+  guessesEl.innerHTML = "";
+  for (const [pid, guess] of Object.entries(guesses)) {
+    const g = document.createElement("div");
+    g.style.padding = "8px";
+    g.style.background = guess.correct ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)";
+    g.style.borderRadius = "6px";
+    g.style.color = guess.correct ? "#86efac" : "#fca5a5";
+    g.style.fontWeight = "600";
+    g.innerHTML = `${guess.correct ? "✅" : ""} ${guess.playerName}: "${guess.word}"`;
+    guessesEl.appendChild(g);
+  }
+});
+
+socket.on("playerList", list => {
+  const scoresEl = document.getElementById("scores");
+  scoresEl.innerHTML = "";
+  const copy = [...list].sort((a,b)=> (b.score||0) - (a.score||0));
+  copy.forEach((p,i) => {
+    const d = document.createElement("div");
+    d.className = "leaderboard-entry";
+    if (i === 0) d.classList.add("top");
+    else if (i === 1) d.classList.add("second");
+    else if (i === 2) d.classList.add("third");
+    else d.classList.add("other");
+    d.innerHTML = `<span>${p.name}</span><span>${p.score || 0} pts</span>`;
+    scoresEl.appendChild(d);
+  });
+});
+
+socket.on("gameOver", finalScores => {
+  document.getElementById("gameScreen").style.display = "none";
+  document.getElementById("gameOverScreen").style.display = "block";
+  
+  let maxScore = -1, winner = null;
+  for (const [pid, score] of Object.entries(finalScores)) {
+    if (score > maxScore) {
+      maxScore = score;
+      winner = pid;
+    }
+  }
+  
+  document.getElementById("winnerName").textContent = winner ? "Winner!" : "Game Over";
+  
+  const finalEl = document.getElementById("finalScores");
+  finalEl.innerHTML = "";
+  const arr = Object.entries(finalScores).sort((a,b) => b[1] - a[1]);
+  arr.forEach((entry, i) => {
+    const d = document.createElement("div");
+    d.className = "leaderboard-entry";
+    if (i === 0) d.classList.add("top");
+    else if (i === 1) d.classList.add("second");
+    else if (i === 2) d.classList.add("third");
+    else d.classList.add("other");
+    d.innerHTML = `<span>${entry[0]}</span><span>${entry[1]} pts</span>`;
+    finalEl.appendChild(d);
+  });
+});
+
+function startTimer(maxTimeMs) {
+  clearInterval(timerInterval);
+  let remain = Math.ceil(maxTimeMs / 1000);
+  document.getElementById("timer").textContent = `Time: ${remain}s`;
+  timerInterval = setInterval(() => {
+    remain--;
+    document.getElementById("timer").textContent = `Time: ${remain}s`;
+    if (remain <= 0) clearInterval(timerInterval);
+  }, 1000);
+}
+</script>
+</body>
+</html>

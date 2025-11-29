@@ -1,0 +1,245 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>GAN Trivia Host</title>
+<link rel="stylesheet" href="/styles.css">
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="header-row">
+    <h1>🎮 GAN Trivia — Host</h1>
+    <div class="room-tag">Room: <span id="roomIdText"></span></div>
+  </div>
+
+  <div id="lobby" class="card">
+    <h2>Lobby Setup</h2>
+    <div id="playerList">Waiting for players...</div>
+
+    <label>📁 Choose Categories (hold ctrl/cmd to multi-select):</label>
+    <select id="categorySelect" multiple style="min-height: 100px;"></select>
+
+    <label>⏱️ Time per question (seconds):</label>
+    <input id="timePerQ" type="number" min="5" max="60" value="15" />
+
+    <label>❓ Number of questions:</label>
+    <input id="questionCount" type="number" min="1" max="50" value="10" />
+
+    <div style="margin-top: 20px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
+      <button id="startBtn">🚀 Start Game</button>
+      <div id="qrCode"></div>
+    </div>
+  </div>
+
+  <div id="gameScreen" class="card">
+    <div id="timer"></div>
+    <div id="question"></div>
+    <div id="options"></div>
+    <div id="revealInfo"></div>
+    <h3>📊 Leaderboard</h3>
+    <div id="scores" class="leaderboard"></div>
+  </div>
+
+  <div id="gameOverScreen" class="card">
+    <div class="trophy">🏆</div>
+    <h2>Game Over!</h2>
+    <div class="winner-name" id="winnerName"></div>
+    <h3>🎖️ Awards</h3>
+    <div class="awards" id="awardsContainer"></div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+const urlParams = new URLSearchParams(location.search);
+const roomId = urlParams.get("room");
+document.getElementById("roomIdText").textContent = roomId || "—";
+
+const playerListEl = document.getElementById("playerList");
+const categorySelect = document.getElementById("categorySelect");
+const startBtn = document.getElementById("startBtn");
+const qrCodeEl = document.getElementById("qrCode");
+const timePerQInput = document.getElementById("timePerQ");
+const questionCountInput = document.getElementById("questionCount");
+
+const lobby = document.getElementById("lobby");
+const gameScreen = document.getElementById("gameScreen");
+const gameOverScreen = document.getElementById("gameOverScreen");
+const questionEl = document.getElementById("question");
+const optionsEl = document.getElementById("options");
+const timerEl = document.getElementById("timer");
+const scoresEl = document.getElementById("scores");
+const revealInfoEl = document.getElementById("revealInfo");
+
+let timerInterval = null;
+let curMaxTimeMs = 15000;
+let playerStats = {}; // Track player stats for awards
+
+const joinUrl = `${location.origin}/games/example-trivia/public/player.html?room=${roomId}`;
+QRCode.toCanvas(joinUrl, { width: 140 }, (err, canvas) => {
+  if (err) console.error(err);
+  else qrCodeEl.appendChild(canvas);
+});
+
+// populate category list
+fetch("/api/games").then(r=>r.json()).then(list=>{
+  const game = list.find(g => g.id === "example-trivia");
+  if(!game) return;
+  game.categories.forEach(cat=>{
+    const opt = document.createElement("option");
+    opt.value = cat.id;
+    opt.textContent = cat.name;
+    categorySelect.appendChild(opt);
+  });
+});
+
+// update player list
+socket.on("playerList", list => {
+  playerListEl.innerHTML = "";
+  list.forEach(p => {
+    const d = document.createElement("div");
+    d.textContent = `${p.name} (${p.score || 0} pts)`;
+    playerListEl.appendChild(d);
+    if (!playerStats[p.id]) playerStats[p.id] = { name: p.name, correct: 0, total: 0, fastest: Infinity };
+  });
+  updateScores(list);
+});
+
+function updateScores(list) {
+  scoresEl.innerHTML = "";
+  const copy = [...list].sort((a,b)=> (b.score||0) - (a.score||0));
+  copy.forEach((p,i) => {
+    const d = document.createElement("div");
+    d.className = "leaderboard-entry";
+    if (i === 0) d.classList.add("top");
+    else if (i === 1) d.classList.add("second");
+    else if (i === 2) d.classList.add("third");
+    else d.classList.add("other");
+    d.innerHTML = `<span>${p.name}</span><span>${p.score || 0} pts</span>`;
+    scoresEl.appendChild(d);
+  });
+}
+
+startBtn.onclick = () => {
+  const selected = Array.from(categorySelect.selectedOptions).map(o=>parseInt(o.value));
+  const maxTime = parseInt(timePerQInput.value, 10) || 15;
+  const questionCount = parseInt(questionCountInput.value, 10) || 10;
+  
+  if (!selected.length) {
+    alert("Pick at least one category.");
+    return;
+  }
+
+  socket.emit("startGame", { roomId, categories: selected, maxTime, questionCount });
+  lobby.style.display = "none";
+  gameScreen.style.display = "block";
+};
+
+// NEW QUESTION
+socket.on("newQuestion", q => {
+  revealInfoEl.innerHTML = "";
+  questionEl.textContent = q.question;
+  optionsEl.innerHTML = "";
+  curMaxTimeMs = q.maxTimeMs || 15000;
+
+  q.options.forEach((opt, i) => {
+    const b = document.createElement("button");
+    b.textContent = opt;
+    b.className = "option";
+    b.disabled = true;
+    optionsEl.appendChild(b);
+  });
+
+  startTimerDisplay(q.maxTimeMs || 15000);
+});
+
+// REVEAL
+socket.on("reveal", data => {
+  const correct = data.correctIndex;
+  revealInfoEl.innerHTML = `<div style="font-weight: bold; margin-bottom: 12px;">✓ Correct answer: <span style="background: #d4edda; padding: 4px 8px; border-radius: 4px; color: #28a745;">Option ${correct}</span></div>`;
+  
+  Array.from(optionsEl.children).forEach((btn, i) => {
+    btn.classList.remove("reveal-correct", "reveal-wrong");
+    if (i === correct) btn.classList.add("reveal-correct");
+    else btn.classList.add("reveal-wrong");
+  });
+
+  let html = "<div><strong>Who got it right:</strong></div>";
+  let hasCorrect = false;
+  for(const [pid, sel] of Object.entries(data.selections || {})) {
+    if (sel.correct) {
+      hasCorrect = true;
+      const time = (sel.timeSeconds || 0).toFixed(1);
+      html += `<div class="answer-row answer-correct">✅ ${sel.name} <span>(+${sel.provisionalPoints} pts, ${time}s)</span></div>`;
+      if (playerStats[pid]) {
+        playerStats[pid].correct++;
+        playerStats[pid].fastest = Math.min(playerStats[pid].fastest, parseFloat(sel.timeSeconds));
+      }
+    }
+    if (playerStats[pid]) playerStats[pid].total++;
+  }
+  if (!hasCorrect) html += `<div class="answer-row" style="color: #999;">No one got it right</div>`;
+  
+  revealInfoEl.innerHTML += html;
+});
+
+// update leaderboard
+socket.on("playerList", list => {
+  updateScores(list);
+});
+
+// game over
+socket.on("gameEnd", endStats => {
+  gameScreen.style.display = "none";
+  gameOverScreen.style.display = "block";
+  
+  // Get winner (last in rankings)
+  const winner = endStats.rankings[endStats.rankings.length - 1];
+  document.getElementById("winnerName").textContent = `🎉 ${winner.name} Wins! 🎉`;
+  
+  // Display all ranked players with traits
+  const awardsHTML = endStats.rankings.map((player, idx) => {
+    const isWinner = idx === endStats.rankings.length - 1;
+    return `
+      <div class="award-card ${isWinner ? 'winner' : ''}">
+        <div class="award-title">${isWinner ? '🏆 ' : ''}${player.trait}</div>
+        <div class="award-name">#${endStats.rankings.length - idx} ${player.name}</div>
+        <div>${player.score} points</div>
+        <div style="font-size: 0.9em; opacity: 0.8; margin-top: 5px;">${player.description}</div>
+        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 8px;">
+          ${player.stats.correct}/${player.stats.total} correct • ${player.stats.accuracy}% accuracy • 🔥 ${player.stats.maxStreak}
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  document.getElementById("awardsContainer").innerHTML = awardsHTML;
+  createConfetti();
+});
+
+function startTimerDisplay(maxTimeMs) {
+  clearInterval(timerInterval);
+  let remain = Math.ceil(maxTimeMs / 1000);
+  timerEl.textContent = `⏱️ Time left: ${remain}s`;
+  timerInterval = setInterval(() => {
+    remain--;
+    timerEl.textContent = `⏱️ Time left: ${remain}s`;
+    if (remain <= 0) clearInterval(timerInterval);
+  }, 1000);
+}
+
+function createConfetti() {
+  for (let i = 0; i < 50; i++) {
+    const confetti = document.createElement("div");
+    confetti.className = "confetti";
+    confetti.style.left = Math.random() * 100 + "%";
+    confetti.style.background = ["#ffd700", "#ff6b6b", "#667eea", "#764ba2"][Math.floor(Math.random() * 4)];
+    document.body.appendChild(confetti);
+    setTimeout(() => confetti.remove(), 3000);
+  }
+}
+</script>
+</body>
+</html>

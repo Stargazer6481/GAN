@@ -1,0 +1,257 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pictionary Player</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="header-row">
+    <a href="/" style="display: flex; align-items: center; text-decoration: none; cursor: pointer;">
+      <img src="/assets/GAN_Logo.png" alt="GAN" style="height: 50px; width: 50px;">
+    </a>
+  </div>
+
+  <div id="joinCard" class="card">
+    <h2>Join Pictionary</h2>
+    <label style="color: #e0e0e0;">Your Name</label>
+    <input id="playerName" placeholder="Enter your name" style="margin-bottom: 16px;" />
+    <button id="joinBtn">Join Game</button>
+  </div>
+
+  <div id="gameCard" class="card" style="display:none;">
+    <div id="timer" style="text-align: center; font-size: 1.8em; font-weight: bold; color: #ff6b6b; margin-bottom: 20px;"></div>
+    
+    <div style="background: rgba(99, 102, 241, 0.1); padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(99, 102, 241, 0.2);">
+      <div id="role" style="font-size: 1.1em; color: #a5b4fc; font-weight: 600;"></div>
+    </div>
+
+    <div id="drawingContainerPlayer" style="background: rgba(40, 40, 70, 0.8); border-radius: 8px; margin-bottom: 20px; border: 2px solid rgba(99, 102, 241, 0.3); overflow: hidden;">
+      <canvas id="drawingCanvasPlayer" style="display: block; width: 100%; background: #000;"></canvas>
+      <div id="drawingToolbar" style="background: rgba(30, 30, 60, 0.9); padding: 12px; display: none; gap: 10px; flex-wrap: wrap;">
+        <label style="color: #e0e0e0; margin-right: 10px;">
+          Color: <input id="brushColor" type="color" value="#ffffff" style="width: 40px; height: 30px; border: none; cursor: pointer;">
+        </label>
+        <label style="color: #e0e0e0;">
+          Size: <input id="brushSize" type="range" min="1" max="20" value="3" style="width: 100px;">
+        </label>
+        <button id="clearBtn" style="padding: 6px 12px; font-size: 14px;">Clear Canvas</button>
+      </div>
+    </div>
+
+    <div id="guessingSection" style="display:none;">
+      <h3>Guess the Drawing!</h3>
+      <input id="guessInput" placeholder="Type your guess..." style="margin-bottom: 12px;" />
+      <button id="submitGuessBtn" style="width: 100%;">Submit Guess</button>
+      <div id="guessStatus" style="margin-top: 12px; text-align: center; color: #9ca3af;"></div>
+    </div>
+
+    <h3>Leaderboard</h3>
+    <div id="scores" class="leaderboard"></div>
+  </div>
+
+  <div id="gameOverCard" class="card" style="display:none; text-align: center;">
+    <h2>Game Over!</h2>
+    <h3 id="gameOverMessage" style="color: #fbbf24; margin: 20px 0;"></h3>
+    <div id="finalScoresPlayer" class="leaderboard"></div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+const params = new URLSearchParams(location.search);
+const roomId = params.get("room");
+
+const joinCard = document.getElementById("joinCard");
+const gameCard = document.getElementById("gameCard");
+const gameOverCard = document.getElementById("gameOverCard");
+const joinBtn = document.getElementById("joinBtn");
+const playerNameInput = document.getElementById("playerName");
+
+const canvas = document.getElementById("drawingCanvasPlayer");
+const ctx = canvas.getContext("2d");
+const drawingToolbar = document.getElementById("drawingToolbar");
+const brushColor = document.getElementById("brushColor");
+const brushSize = document.getElementById("brushSize");
+const clearBtn = document.getElementById("clearBtn");
+
+let playerId = null;
+let isDrawer = false;
+let isDrawing = false;
+let lastX = 0, lastY = 0;
+let gameActive = true;
+
+joinBtn.onclick = () => {
+  const name = playerNameInput.value.trim();
+  if(!name) return alert("Enter a name");
+  socket.emit("joinRoom", { roomId, playerName: name }, res => {
+    if(res && res.error) return alert(res.error);
+    playerId = socket.id;
+    joinCard.style.display = "none";
+    gameCard.style.display = "block";
+  });
+};
+
+socket.on("roundStart", data => {
+  gameActive = true;
+  isDrawer = data.drawerSocketId === socket.id;
+  document.getElementById("role").textContent = isDrawer ? "You are the Drawer" : "Guess the Drawing";
+  
+  document.getElementById("guessingSection").style.display = isDrawer ? "none" : "block";
+  drawingToolbar.style.display = isDrawer ? "flex" : "none";
+  
+  // Clear and setup canvas
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 400;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  document.getElementById("guessInput").value = "";
+  document.getElementById("guessStatus").textContent = "";
+});
+
+// Drawing events
+canvas.addEventListener("mousedown", (e) => {
+  if (!isDrawer || !gameActive) return;
+  isDrawing = true;
+  const rect = canvas.getBoundingClientRect();
+  lastX = e.clientX - rect.left;
+  lastY = e.clientY - rect.top;
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  if (!isDrawing || !isDrawer) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  
+  ctx.strokeStyle = brushColor.value;
+  ctx.lineWidth = brushSize.value;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(lastX, lastY);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  
+  socket.emit("draw", {
+    roomId,
+    fromX: lastX / canvas.offsetWidth,
+    fromY: lastY / canvas.offsetHeight,
+    toX: x / canvas.offsetWidth,
+    toY: y / canvas.offsetHeight,
+    color: brushColor.value,
+    width: brushSize.value
+  });
+  
+  lastX = x;
+  lastY = y;
+});
+
+canvas.addEventListener("mouseup", () => isDrawing = false);
+canvas.addEventListener("mouseout", () => isDrawing = false);
+
+clearBtn.onclick = () => {
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+};
+
+document.getElementById("submitGuessBtn").onclick = () => {
+  const guess = document.getElementById("guessInput").value.trim();
+  if (!guess) return;
+  socket.emit("submitGuess", { roomId, playerId, guessedWord: guess });
+};
+
+socket.on("drawingUpdate", data => {
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+  ctx.strokeStyle = data.color || "#fff";
+  ctx.lineWidth = data.width || 3;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(data.fromX * w, data.fromY * h);
+  ctx.lineTo(data.toX * w, data.toY * h);
+  ctx.stroke();
+});
+
+socket.on("guessResult", result => {
+  const statusEl = document.getElementById("guessStatus");
+  if (result.correct) {
+    statusEl.textContent = "Correct!";
+    statusEl.style.color = "#86efac";
+    document.getElementById("guessInput").disabled = true;
+    document.getElementById("submitGuessBtn").disabled = true;
+  } else {
+    statusEl.textContent = "Wrong, try again!";
+    statusEl.style.color = "#fca5a5";
+  }
+});
+
+socket.on("playerList", list => {
+  const scoresEl = document.getElementById("scores");
+  scoresEl.innerHTML = "";
+  const copy = [...list].sort((a,b) => (b.score||0) - (a.score||0));
+  copy.forEach((p,i) => {
+    const d = document.createElement("div");
+    d.className = "leaderboard-entry";
+    if (i === 0) d.classList.add("top");
+    else if (i === 1) d.classList.add("second");
+    else if (i === 2) d.classList.add("third");
+    else d.classList.add("other");
+    d.innerHTML = `<span>${p.name}</span><span>${p.score || 0} pts</span>`;
+    scoresEl.appendChild(d);
+  });
+});
+
+socket.on("gameOver", finalScores => {
+  gameActive = false;
+  gameCard.style.display = "none";
+  gameOverCard.style.display = "block";
+  
+  let maxScore = -1, winner = null;
+  for (const [pid, score] of Object.entries(finalScores)) {
+    if (score > maxScore) {
+      maxScore = score;
+      winner = pid;
+    }
+  }
+  
+  document.getElementById("gameOverMessage").textContent = "Game Complete!";
+  
+  const finalEl = document.getElementById("finalScoresPlayer");
+  finalEl.innerHTML = "";
+  const arr = Object.entries(finalScores).sort((a,b) => b[1] - a[1]);
+  arr.forEach((entry, i) => {
+    const d = document.createElement("div");
+    d.className = "leaderboard-entry";
+    if (i === 0) d.classList.add("top");
+    else if (i === 1) d.classList.add("second");
+    else if (i === 2) d.classList.add("third");
+    else d.classList.add("other");
+    d.innerHTML = `<span>${entry[0]}</span><span>${entry[1]} pts</span>`;
+    finalEl.appendChild(d);
+  });
+});
+
+let timerInterval = null;
+socket.on("timerUpdate", remaining => {
+  document.getElementById("timer").textContent = `Time: ${remaining}s`;
+});
+
+function startTimer(maxTimeMs) {
+  clearInterval(timerInterval);
+  let remain = Math.ceil(maxTimeMs / 1000);
+  document.getElementById("timer").textContent = `Time: ${remain}s`;
+  timerInterval = setInterval(() => {
+    remain--;
+    document.getElementById("timer").textContent = `Time: ${remain}s`;
+    if (remain <= 0) clearInterval(timerInterval);
+  }, 1000);
+}
+</script>
+</body>
+</html>

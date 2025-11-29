@@ -1,0 +1,12 @@
+{
+  "name": "Example Trivia",
+  "id": "example-trivia",
+  "minPlayers": 2,
+  "maxPlayers": 10,
+  "categories": [
+    { "id": 9, "name": "General Knowledge" },
+    { "id": 17, "name": "Science & Nature" },
+    { "id": 23, "name": "History" },
+    { "id": 21, "name": "Sports" }
+  ]
+}

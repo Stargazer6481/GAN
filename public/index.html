@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GAN - Game Area Network</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="container" style="display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; gap: 40px;">
+  <div style="text-align: center;">
+    <img src="/assets/GAN_Wide.png" alt="GAN" style="max-width: 600px; width: 100%; margin-bottom: 30px;">
+    <p style="font-size: 1.2em; color: #9ca3af;">Locally hosted game nights</p>
+  </div>
+  
+  <button id="hostBtn" style="font-size: 1.2em; padding: 16px 48px; min-width: 300px;">Start Hosting</button>
+</div>
+
+<script>
+document.getElementById("hostBtn").onclick = () => {
+  window.location = "/host-dashboard.html";
+};
+</script>
+</body>
+</html>

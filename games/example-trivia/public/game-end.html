@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Results - Trivia</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .end-screen {
+      min-height: 100vh;
+      padding: 20px;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: white;
+    }
+
+    .end-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .end-header h1 {
+      font-size: 3.5em;
+      margin: 0;
+      background: linear-gradient(135deg, #a78bfa, #f472b6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: fadeIn 1s ease-out;
+    }
+
+    .end-header p {
+      font-size: 1.2em;
+      margin-top: 10px;
+      opacity: 0.8;
+    }
+
+    .rankings-container {
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 40px;
+    }
+
+    .rank-item {
+      background: rgba(168, 139, 250, 0.1);
+      border: 2px solid rgba(168, 139, 250, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      opacity: 0;
+      animation: slideUpIn 0.6s ease-out forwards;
+      transition: all 0.3s ease;
+    }
+
+    .rank-item:nth-child(1) { animation-delay: 0.3s; }
+    .rank-item:nth-child(2) { animation-delay: 0.6s; }
+    .rank-item:nth-child(3) { animation-delay: 0.9s; }
+    .rank-item:nth-child(4) { animation-delay: 1.2s; }
+    .rank-item:nth-child(5) { animation-delay: 1.5s; }
+    .rank-item:nth-child(6) { animation-delay: 1.8s; }
+    .rank-item:nth-child(7) { animation-delay: 2.1s; }
+    .rank-item:nth-child(8) { animation-delay: 2.4s; }
+
+    .rank-item:hover {
+      background: rgba(168, 139, 250, 0.2);
+      border-color: rgba(168, 139, 250, 0.6);
+      transform: translateX(10px);
+    }
+
+    .rank-item.winner {
+      background: linear-gradient(135deg, rgba(251, 146, 60, 0.2), rgba(168, 139, 250, 0.2));
+      border: 2px solid #fb923c;
+      box-shadow: 0 0 30px rgba(251, 146, 60, 0.4);
+    }
+
+    .rank-number {
+      font-size: 2em;
+      font-weight: bold;
+      min-width: 50px;
+      color: #a78bfa;
+    }
+
+    .rank-item.winner .rank-number {
+      color: #fb923c;
+      font-size: 2.5em;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .rank-info {
+      flex: 1;
+    }
+
+    .player-name {
+      font-size: 1.3em;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .trait {
+      font-size: 1.8em;
+      margin: 5px 0;
+    }
+
+    .trait-description {
+      font-size: 0.9em;
+      opacity: 0.7;
+      margin-top: 3px;
+    }
+
+    .rank-score {
+      text-align: right;
+      min-width: 100px;
+    }
+
+    .score-value {
+      font-size: 2em;
+      font-weight: bold;
+      color: #fb923c;
+    }
+
+    .rank-item.winner .score-value {
+      animation: scaleUp 0.6s ease-out;
+    }
+
+    .stats-row {
+      display: flex;
+      gap: 15px;
+      margin-top: 10px;
+      font-size: 0.85em;
+      opacity: 0.8;
+    }
+
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stat-label {
+      opacity: 0.7;
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-top: 30px;
+      flex-wrap: wrap;
+      justify-content: center;
+      animation: fadeIn 2s ease-out;
+    }
+
+    .btn {
+      padding: 12px 30px;
+      font-size: 1.1em;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #a78bfa, #c084fc);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(168, 139, 250, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(168, 139, 250, 0.2);
+      color: #a78bfa;
+      border: 2px solid #a78bfa;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(168, 139, 250, 0.3);
+      transform: translateY(-2px);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideUpIn {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes scaleUp {
+      from {
+        transform: scale(0.5);
+        opacity: 0;
+      }
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.1);
+      }
+    }
+
+    /* Confetti animation */
+    .confetti {
+      position: fixed;
+      width: 10px;
+      height: 10px;
+      pointer-events: none;
+      animation: confettiFall 3s ease-out forwards;
+    }
+
+    @keyframes confettiFall {
+      0% {
+        transform: translate(0, -100vh) rotate(0deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(var(--tx), 100vh) rotate(360deg);
+        opacity: 0;
+      }
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+      .end-header h1 {
+        font-size: 2.5em;
+      }
+
+      .rank-item {
+        flex-direction: column;
+        text-align: center;
+        gap: 15px;
+      }
+
+      .rank-score {
+        text-align: center;
+        min-width: auto;
+      }
+
+      .stats-row {
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        font-size: 1em;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .end-header h1 {
+        font-size: 2em;
+      }
+
+      .rank-item {
+        padding: 15px;
+      }
+
+      .player-name {
+        font-size: 1.1em;
+      }
+
+      .trait {
+        font-size: 1.5em;
+      }
+
+      .score-value {
+        font-size: 1.5em;
+      }
+    }
+
+    @media (max-width: 360px) {
+      .end-header h1 {
+        font-size: 1.5em;
+      }
+
+      .rank-number {
+        font-size: 1.5em;
+        min-width: 40px;
+      }
+
+      .player-name {
+        font-size: 0.95em;
+      }
+
+      .trait {
+        font-size: 1.2em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="end-screen">
+    <div class="end-header">
+      <h1>🎉 Game Over! 🎉</h1>
+      <p>Here are the results...</p>
+    </div>
+
+    <div class="rankings-container" id="rankingsContainer"></div>
+
+    <div class="controls">
+      <button class="btn btn-primary" id="playAgainBtn">Play Again</button>
+      <a href="/" class="btn btn-secondary">Go Home</a>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let roomId = null;
+
+    // Get roomId from URL or session
+    const params = new URLSearchParams(window.location.search);
+    roomId = params.get("roomId");
+
+    if (!roomId) {
+      window.location.href = "/";
+    }
+
+    function createConfetti() {
+      const colors = ['#a78bfa', '#f472b6', '#fb923c', '#fbbf24', '#34d399'];
+      for (let i = 0; i < 30; i++) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.style.left = Math.random() * window.innerWidth + 'px';
+        confetti.style.top = '-10px';
+        confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
+        confetti.style.setProperty('--tx', (Math.random() - 0.5) * 200 + 'px');
+        document.body.appendChild(confetti);
+        setTimeout(() => confetti.remove(), 3000);
+      }
+    }
+
+    function displayRankings(rankings) {
+      const container = document.getElementById('rankingsContainer');
+      container.innerHTML = '';
+
+      rankings.forEach((player, index) => {
+        const isWinner = index === rankings.length - 1;
+        const item = document.createElement('div');
+        item.className = `rank-item ${isWinner ? 'winner' : ''}`;
+
+        const rankDisplay = index === rankings.length - 1 ? '🏆' : (index + 1);
+
+        item.innerHTML = `
+          <div class="rank-number">${rankDisplay}</div>
+          <div class="rank-info">
+            <p class="player-name">${player.name}</p>
+            <div class="trait">${player.trait}</div>
+            <p class="trait-description">${player.description}</p>
+            <div class="stats-row">
+              <div class="stat">
+                <span>✓</span>
+                <span class="stat-label">${player.stats.correct}/${player.stats.total}</span>
+              </div>
+              <div class="stat">
+                <span>🎯</span>
+                <span class="stat-label">${player.stats.accuracy}%</span>
+              </div>
+              <div class="stat">
+                <span>⚡</span>
+                <span class="stat-label">${player.stats.avgResponseTime}ms</span>
+              </div>
+              <div class="stat">
+                <span>🔥</span>
+                <span class="stat-label">Max ${player.stats.maxStreak}</span>
+              </div>
+            </div>
+          </div>
+          <div class="rank-score">
+            <div class="score-value">${player.score}</div>
+            <p style="font-size: 0.85em; opacity: 0.7; margin: 0;">points</p>
+          </div>
+        `;
+
+        container.appendChild(item);
+      });
+
+      // Trigger confetti on winner reveal
+      setTimeout(() => {
+        createConfetti();
+      }, (rankings.length * 300) + 500);
+    }
+
+    socket.on("gameEnd", (endStats) => {
+      displayRankings(endStats.rankings);
+    });
+
+    document.getElementById('playAgainBtn').addEventListener('click', () => {
+      // Refresh the host-dashboard to play again
+      window.location.href = `/host-dashboard.html?roomId=${roomId}&playAgain=true`;
+    });
+  </script>
+</body>
+</html>
